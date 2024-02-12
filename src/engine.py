@@ -60,8 +60,11 @@ class vLLMEngine:
             yield batch
 
     async def generate_vllm(self, llm_input, validated_sampling_params, batch_size, stream, apply_chat_template, conv, question, request_id: str) -> AsyncGenerator[dict, None]:
-        if apply_chat_template or isinstance(llm_input, list):
-            llm_input = self.tokenizer.apply_chat_template(llm_input)
+        c=""" You are a survey collection bot named Dolly.your task is to give a response to user and ask the question below
+              after replying you should always ask this Question:
+        """
+        past = c+question+"\n"+"conversation"+conv+"\nuser:"+llm_input+"\nDolly:"
+        llm_input=past
         validated_sampling_params = SamplingParams(**validated_sampling_params)
         results_generator = self.llm.generate(llm_input, validated_sampling_params, request_id)
         n_responses, n_input_tokens, is_first_output = validated_sampling_params.n, 0, True
