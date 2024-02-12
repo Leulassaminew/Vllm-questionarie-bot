@@ -46,7 +46,11 @@ class JobInput:
         self.use_openai_format = job.get("use_openai_format", False)
         self.validated_sampling_params = validate_sampling_params(job.get("sampling_params", {}))
         self.conv = job.get("conv","")
-        self.question = job.get("question","")
+        self.task = job.get("task",False)
+        if self.task!=False:
+            self.character = job.get("character","")
+        else:
+            self.question = job.get("question","")           
         self.request_id = random_uuid()
            
 class DummyRequest:
