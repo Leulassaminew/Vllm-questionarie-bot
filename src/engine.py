@@ -59,7 +59,7 @@ class vLLMEngine:
         async for batch in generator(**generator_args):
             yield batch
 
-    async def generate_vllm(self, llm_input, validated_sampling_params, batch_size, stream, apply_chat_template, request_id: str) -> AsyncGenerator[dict, None]:
+    async def generate_vllm(self, llm_input, validated_sampling_params, batch_size, stream, apply_chat_template, conv, question, request_id: str) -> AsyncGenerator[dict, None]:
         if apply_chat_template or isinstance(llm_input, list):
             llm_input = self.tokenizer.apply_chat_template(llm_input)
         validated_sampling_params = SamplingParams(**validated_sampling_params)
