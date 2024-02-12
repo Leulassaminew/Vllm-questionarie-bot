@@ -53,13 +53,15 @@ class vLLMEngine:
             if self.openai_engine is None:
                 raise ValueError("OpenAI Chat Completion Format is not enabled for this model")
             generator = self.generate_openai_chat
+        elif generator_args["task"]!=False:
+            generator = self.generate_data
         else:
             generator = self.generate_vllm        
         
         async for batch in generator(**generator_args):
             yield batch
 
-    async def generate_vllm(self, llm_input, validated_sampling_params, batch_size, stream, apply_chat_template, conv, question, request_id: str) -> AsyncGenerator[dict, None]:
+    async def generate_vllm(self, llm_input, validated_sampling_params, batch_size, stream, apply_chat_template, conv, question, task, request_id: str) -> AsyncGenerator[dict, None]:
         c=""" You are a survey collection bot named Dolly.your task is to give a response to user and ask the question below
               after replying you should always ask this Question:
         """
@@ -108,7 +110,59 @@ class vLLMEngine:
         if token_counters["batch"] > 0:
             batch["usage"] = {"input": n_input_tokens, "output": token_counters["total"]}
             yield batch
-    
+
+    async def generate_data(self, validated_sampling_params, batch_size, stream, apply_chat_template, conversation, task, character, request_id: str) -> AsyncGenerator[dict, None]:
+        past = """
+        You are a psychologist Your task is to Generalize the {task} of {character} and write a summary about it.
+        I am going to use this generalized summary to create an AI clone of {character} by feeding it as an instruction to an AI. And also write the summary as a paragraph.
+        Conversation:\n
+        """
+        past = past.replace("{task}",task)
+        past = past.replace("{character}",character)
+        llm_input=past+conversation+"Response:"
+        validated_sampling_params = SamplingParams(**validated_sampling_params)
+        results_generator = self.llm.generate(llm_input, validated_sampling_params, request_id)
+        n_responses, n_input_tokens, is_first_output = validated_sampling_params.n, 0, True
+        last_output_texts, token_counters = ["" for _ in range(n_responses)], {"batch": 0, "total": 0}
+
+        batch = {
+            "choices": [{"tokens": []} for _ in range(n_responses)],
+        }
+
+        async for request_output in results_generator:
+            if is_first_output:  # Count input tokens only once
+                n_input_tokens = len(request_output.prompt_token_ids)
+                is_first_output = False
+
+            for output in request_output.outputs:
+                output_index = output.index
+                token_counters["total"] += 1
+                if stream:
+                    new_output = output.text[len(last_output_texts[output_index]):]
+                    batch["choices"][output_index]["tokens"].append(new_output)
+                    token_counters["batch"] += 1
+
+                    if token_counters["batch"] >= batch_size:
+                        batch["usage"] = {
+                            "input": n_input_tokens,
+                            "output": token_counters["total"],
+                        }
+                        yield batch
+                        batch = {
+                            "choices": [{"tokens": []} for _ in range(n_responses)],
+                        }
+                        token_counters["batch"] = 0
+
+                last_output_texts[output_index] = output.text
+
+        if not stream:
+            for output_index, output in enumerate(last_output_texts):
+                batch["choices"][output_index]["tokens"] = [output]
+            token_counters["batch"] += 1
+
+        if token_counters["batch"] > 0:
+            batch["usage"] = {"input": n_input_tokens, "output": token_counters["total"]}
+            yield batch    
     async def generate_openai_chat(self, llm_input, validated_sampling_params, batch_size, stream, apply_chat_template, request_id: str) -> AsyncGenerator[dict, None]:
         
         if isinstance(llm_input, str):
